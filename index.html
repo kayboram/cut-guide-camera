@@ -25,6 +25,8 @@
         </div>
         <p class="help">한 줄에 한 컷씩 붙여넣으세요. 마크다운 표도 읽을 수 있어요.</p>
         <textarea id="cut-input" rows="9" placeholder="컷 1 | 택배 받은 그대로 / 4종 한 번에 | 밝은 자연광&#10;컷 2 | 파우치 앞면 확대 | 디자인이 보이게"></textarea>
+        <label class="requirements-input-label" for="requirements-input">업체 필수 조건 (촬영 화면 상단 요약용)</label>
+        <textarea id="requirements-input" rows="5" placeholder="필수 컷, 소품·연출, 영상, 키워드 등을 한 줄씩 적어 주세요."></textarea>
         <button id="parse-button" class="secondary-button" type="button">목록 만들기</button>
         <p id="parse-message" class="message" aria-live="polite"></p>
       </section>
@@ -37,7 +39,7 @@
           </div>
           <span id="setup-progress" class="pill"></span>
         </div>
-        <p class="help">있으면 앨범에서 골라 주세요. 나중에 카메라 위에 반투명하게 보여요.</p>
+        <p class="help">컷마다 여러 장을 한 번에 고르거나 나중에 더 추가할 수 있어요. 등록한 사진은 개별 삭제할 수 있습니다.</p>
         <div id="setup-cut-list" class="setup-cut-list"></div>
         <button id="start-button" class="primary-button" type="button">촬영 시작</button>
       </section>
@@ -51,6 +53,14 @@
       <div class="camera-shade camera-shade-top"></div>
       <div class="camera-shade camera-shade-bottom"></div>
 
+      <section id="requirements-banner" class="requirements-banner" aria-label="업체 필수 요약">
+        <button id="requirements-toggle" type="button" aria-expanded="true">
+          <span>업체 필수 요약</span>
+          <span id="requirements-chevron" aria-hidden="true">⌃</span>
+        </button>
+        <p id="requirements-summary"></p>
+      </section>
+
       <header class="camera-header">
         <button id="back-button" class="round-button" type="button" aria-label="목록으로 돌아가기">‹</button>
         <div class="camera-title-wrap">
@@ -60,6 +70,12 @@
         </div>
         <button id="list-button" class="round-button" type="button" aria-label="컷 목록 열기">☰</button>
       </header>
+
+      <section id="reference-selector" class="reference-selector hidden" aria-label="겹쳐 볼 예시 사진 선택">
+        <button id="reference-previous-button" class="reference-arrow" type="button" aria-label="이전 예시 사진">‹</button>
+        <div id="reference-thumbnails" class="reference-thumbnails"></div>
+        <button id="reference-next-button" class="reference-arrow" type="button" aria-label="다음 예시 사진">›</button>
+      </section>
 
       <section class="overlay-controls" aria-label="예시 사진 설정">
         <button id="overlay-toggle" class="control-button" type="button">겹침 켜기</button>
