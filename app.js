@@ -35,7 +35,11 @@ let referenceUrl = null;
 let referenceUrls = [];
 let currentReferences = [];
 let setupReferenceUrls = [];
+let setupExportFiles = [];
 let messageTimer = null;
+let previewObjectUrl = null;
+let previewFile = null;
+let pendingExportBatches = [];
 
 function loadState() {
   try {
@@ -113,9 +117,12 @@ async function renderSetupList() {
   panel.classList.toggle("hidden", !state.cuts.length);
   setupReferenceUrls.forEach((url) => URL.revokeObjectURL(url));
   setupReferenceUrls = [];
+  setupExportFiles = [];
   setupCutList.replaceChildren();
   const done = state.cuts.filter((cut) => cut.done).length;
   el("setup-progress").textContent = `${done}/${state.cuts.length} 촬영`;
+  el("export-all-button").disabled = true;
+  let totalImages = 0;
 
   for (let index = 0; index < state.cuts.length; index += 1) {
     const cut = state.cuts[index];
@@ -123,21 +130,35 @@ async function renderSetupList() {
     item.className = "setup-cut";
     item.innerHTML = `
       <span class="cut-number">${String(index + 1).padStart(2, "0")}</span>
-      <div><h3>${escapeHtml(cut.title)}</h3><p>${escapeHtml(cut.tip || "팁 없음")}</p></div>
+      <div class="cut-heading">
+        <div><h3>${escapeHtml(cut.title)}</h3><p>${escapeHtml(cut.tip || "팁 없음")}</p></div>
+        <button class="cut-save-button hidden" type="button">이 컷 저장</button>
+      </div>
       <div class="reference-editor">
         <div class="setup-references" aria-label="등록한 예시 사진"></div>
         <label class="image-picker"><span>사진 추가</span><input type="file" accept="image/*" multiple /></label>
       </div>`;
     const previewList = item.querySelector(".setup-references");
+    const cutSaveButton = item.querySelector(".cut-save-button");
     const input = item.querySelector("input");
     const savedImages = await getReferences(cut.id);
+    totalImages += savedImages.length;
+    savedImages.forEach((file, imageIndex) => {
+      setupExportFiles.push({ cutIndex: index, imageIndex, file: makeReferenceFile(file, index, imageIndex) });
+    });
+    if (savedImages.length) {
+      cutSaveButton.classList.remove("hidden");
+      cutSaveButton.textContent = `이 컷 저장 (${savedImages.length})`;
+      cutSaveButton.addEventListener("click", () => exportCut(index));
+    }
     savedImages.forEach((file, imageIndex) => {
       const preview = document.createElement("div");
       preview.className = "setup-reference";
       const url = URL.createObjectURL(file);
       setupReferenceUrls.push(url);
-      preview.innerHTML = `<img src="${url}" alt="예시 사진 ${imageIndex + 1}" /><button class="delete-reference" type="button" aria-label="예시 사진 ${imageIndex + 1} 삭제">×</button>`;
-      preview.querySelector("button").addEventListener("click", async () => {
+      preview.innerHTML = `<button class="preview-reference" type="button" aria-label="예시 사진 ${imageIndex + 1} 크게 보기"><img src="${url}" alt="예시 사진 ${imageIndex + 1}" /></button><button class="delete-reference" type="button" aria-label="예시 사진 ${imageIndex + 1} 삭제">×</button>`;
+      preview.querySelector(".preview-reference").addEventListener("click", () => openPreview(index, imageIndex, file));
+      preview.querySelector(".delete-reference").addEventListener("click", async () => {
         const nextImages = savedImages.filter((_, savedIndex) => savedIndex !== imageIndex);
         await putReferences(cut.id, nextImages);
         cut.selectedReference = Math.min(cut.selectedReference || 0, Math.max(0, nextImages.length - 1));
@@ -155,6 +176,131 @@ async function renderSetupList() {
     });
     setupCutList.append(item);
   }
+
+  el("export-all-button").textContent = `올린 사진 전체 저장/공유 (${totalImages}장)`;
+  el("export-all-button").disabled = totalImages === 0;
+}
+
+function referenceExtension(type) {
+  if (/svg/i.test(type)) return "svg";
+  if (/png/i.test(type)) return "png";
+  if (/webp/i.test(type)) return "webp";
+  if (/gif/i.test(type)) return "gif";
+  if (/avif/i.test(type)) return "avif";
+  if (/hei[cf]/i.test(type)) return /heif/i.test(type) ? "heif" : "heic";
+  return "jpg";
+}
+
+function makeReferenceFile(blob, cutIndex, imageIndex) {
+  const type = blob.type || "image/jpeg";
+  const extension = referenceExtension(type);
+  const filename = `컷${String(cutIndex + 1).padStart(2, "0")}_${String(imageIndex + 1).padStart(2, "0")}.${extension}`;
+  return new File([blob], filename, { type, lastModified: Date.now() });
+}
+
+function showExportMessage(message) {
+  el("export-message").textContent = message;
+}
+
+function downloadFiles(files) {
+  files.forEach((file) => {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+}
+
+async function shareOrDownload(files, title = "컷가이드 사진") {
+  if (!files.length) return false;
+  try {
+    const shareData = { files, title };
+    if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+      await navigator.share(shareData);
+      showExportMessage(`${files.length}장 공유를 마쳤어요. 아이폰에서는 공유창의 ‘이미지 저장’을 선택해 주세요.`);
+      return true;
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      showExportMessage("공유창을 닫았어요. 사진은 브라우저에 그대로 있습니다.");
+      return false;
+    }
+    console.error(error);
+  }
+  downloadFiles(files);
+  showExportMessage(`${files.length}장을 파일로 내려받았어요.`);
+  return true;
+}
+
+function exportFiles(files, title) {
+  if (!files.length) {
+    showExportMessage("저장할 사진이 없어요.");
+    return;
+  }
+  if (files.length > 10) {
+    openExportSheet(files, title);
+    return;
+  }
+  shareOrDownload(files, title);
+}
+
+function exportAll() {
+  exportFiles(setupExportFiles.map((item) => item.file), "컷가이드 사진 전체");
+}
+
+function exportCut(cutIndex) {
+  const files = setupExportFiles.filter((item) => item.cutIndex === cutIndex).map((item) => item.file);
+  exportFiles(files, `컷 ${cutIndex + 1} 사진`);
+}
+
+function openPreview(cutIndex, imageIndex, blob) {
+  closePreview();
+  previewFile = makeReferenceFile(blob, cutIndex, imageIndex);
+  previewObjectUrl = URL.createObjectURL(blob);
+  el("preview-title").textContent = `컷 ${String(cutIndex + 1).padStart(2, "0")} · 사진 ${String(imageIndex + 1).padStart(2, "0")}`;
+  el("preview-image").src = previewObjectUrl;
+  el("preview-modal").classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  el("preview-close-button").focus();
+}
+
+function closePreview() {
+  el("preview-modal").classList.add("hidden");
+  if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+  previewObjectUrl = null;
+  previewFile = null;
+  if (el("export-sheet").classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+function openExportSheet(files, title) {
+  closePreview();
+  pendingExportBatches = [];
+  for (let index = 0; index < files.length; index += 10) pendingExportBatches.push(files.slice(index, index + 10));
+  const list = el("export-batch-list");
+  list.replaceChildren();
+  pendingExportBatches.forEach((batch, index) => {
+    const start = index * 10 + 1;
+    const end = start + batch.length - 1;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "export-batch-button";
+    button.textContent = `${start}~${end}번 사진 저장/공유 (${batch.length}장)`;
+    button.addEventListener("click", () => shareOrDownload(batch, `${title} ${index + 1}`));
+    list.append(button);
+  });
+  el("export-sheet").classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  list.querySelector("button")?.focus();
+}
+
+function closeExportSheet() {
+  el("export-sheet").classList.add("hidden");
+  pendingExportBatches = [];
+  document.body.classList.remove("modal-open");
 }
 
 async function startCamera() {
@@ -391,6 +537,7 @@ el("sample-button").addEventListener("click", () => {
   createList();
 });
 el("parse-button").addEventListener("click", createList);
+el("export-all-button").addEventListener("click", exportAll);
 requirementsInput.addEventListener("input", () => {
   state.requirements = requirementsInput.value.trim();
   saveState();
@@ -411,6 +558,18 @@ el("requirements-toggle").addEventListener("click", () => {
   state.requirementsCollapsed = !state.requirementsCollapsed;
   saveState();
   renderRequirements();
+});
+el("preview-close-button").addEventListener("click", closePreview);
+el("preview-backdrop").addEventListener("click", closePreview);
+el("preview-save-button").addEventListener("click", () => {
+  if (previewFile) shareOrDownload([previewFile], previewFile.name);
+});
+el("export-close-button").addEventListener("click", closeExportSheet);
+el("export-backdrop").addEventListener("click", closeExportSheet);
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!el("preview-modal").classList.contains("hidden")) closePreview();
+  if (!el("export-sheet").classList.contains("hidden")) closeExportSheet();
 });
 
 window.addEventListener("pagehide", stopCamera);

@@ -40,8 +40,15 @@
           <span id="setup-progress" class="pill"></span>
         </div>
         <p class="help">컷마다 여러 장을 한 번에 고르거나 나중에 더 추가할 수 있어요. 등록한 사진은 개별 삭제할 수 있습니다.</p>
+        <div class="export-toolbar">
+          <button id="export-all-button" class="export-all-button" type="button" disabled>올린 사진 전체 저장/공유 (0장)</button>
+          <p>사진이 10장보다 많으면 아이폰에서 안전하게 저장할 수 있도록 10장씩 나눠 보여 드려요.</p>
+        </div>
+        <p id="export-message" class="message export-message" aria-live="polite"></p>
         <div id="setup-cut-list" class="setup-cut-list"></div>
-        <button id="start-button" class="primary-button" type="button">촬영 시작</button>
+        <div class="setup-actions">
+          <button id="start-button" class="primary-button" type="button">촬영 시작</button>
+        </div>
       </section>
 
       <footer class="privacy-note">사진은 이 휴대폰 안에서만 처리되고 서버로 전송되지 않아요.</footer>
@@ -109,6 +116,36 @@
 
       <canvas id="capture-canvas" class="hidden"></canvas>
     </main>
+
+    <section id="preview-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+      <button id="preview-backdrop" class="modal-backdrop" type="button" aria-label="미리보기 닫기"></button>
+      <div class="preview-card">
+        <div class="preview-header">
+          <div>
+            <p class="eyebrow">사진 미리보기</p>
+            <h2 id="preview-title"></h2>
+          </div>
+          <button id="preview-close-button" class="modal-close-button" type="button" aria-label="미리보기 닫기">×</button>
+        </div>
+        <img id="preview-image" alt="선택한 예시 사진 크게 보기" />
+        <button id="preview-save-button" class="primary-button" type="button">이 사진 저장/공유</button>
+      </div>
+    </section>
+
+    <section id="export-sheet" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="export-sheet-title">
+      <button id="export-backdrop" class="modal-backdrop" type="button" aria-label="저장 목록 닫기"></button>
+      <div class="preview-card export-sheet-card">
+        <div class="preview-header">
+          <div>
+            <p class="eyebrow">사진 안전하게 꺼내기</p>
+            <h2 id="export-sheet-title">10장씩 저장/공유</h2>
+          </div>
+          <button id="export-close-button" class="modal-close-button" type="button" aria-label="저장 목록 닫기">×</button>
+        </div>
+        <p class="export-sheet-help">아래 묶음을 하나씩 눌러 아이폰 공유창에서 ‘이미지 저장’을 선택해 주세요.</p>
+        <div id="export-batch-list" class="export-batch-list"></div>
+      </div>
+    </section>
 
     <script src="app.js"></script>
   </body>
