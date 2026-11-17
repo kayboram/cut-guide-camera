@@ -16,7 +16,7 @@ html, body { margin: 0; min-height: 100%; background: var(--paper); }
 
 body { color: var(--ink); }
 
-button, textarea, input { font: inherit; }
+button, textarea, input, select { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .hidden { display: none !important; }
 
@@ -37,6 +37,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .section-title h2 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
 .step { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: var(--ink); color: white; font-size: 13px; font-weight: 800; }
 .help { margin: 13px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.campaign-label { display: block; margin: 18px 2px 8px; color: #4f493f; font-size: 13px; font-weight: 800; }
+.campaign-select { width: 100%; min-height: 50px; padding: 0 42px 0 14px; border: 1px solid #c3b9a8; border-radius: 14px; background: #fff; color: var(--ink); font-weight: 800; outline: none; }
+.campaign-select:focus { border-color: var(--accent-deep); box-shadow: 0 0 0 3px rgba(229, 173, 16, .16); }
+.campaign-help { margin: 8px 2px 0; color: var(--green); font-size: 12px; line-height: 1.45; }
 
 textarea { width: 100%; padding: 14px; resize: vertical; border: 1px solid #ccc4b5; border-radius: 14px; background: #fff; color: var(--ink); font-size: 15px; line-height: 1.55; outline: none; }
 textarea:focus { border-color: var(--accent-deep); box-shadow: 0 0 0 3px rgba(229, 173, 16, .16); }
