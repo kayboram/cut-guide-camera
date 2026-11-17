@@ -164,17 +164,12 @@ const cutInput = el("cut-input");
 const requirementsInput = el("requirements-input");
 const parseMessage = el("parse-message");
 const setupCutList = el("setup-cut-list");
-const guideImage = el("guide-image");
 const video = el("camera-video");
 
 let activeCampaignId = loadActiveCampaignId();
 let state = loadState(activeCampaignId);
 let currentIndex = 0;
 let cameraStream = null;
-let referenceUrl = null;
-let referenceUrls = [];
-let currentReferences = [];
-let setupReferenceUrls = [];
 let setupExportFiles = [];
 let messageTimer = null;
 let previewObjectUrl = null;
@@ -309,8 +304,6 @@ function createList() {
 async function renderSetupList() {
   const panel = el("cut-list-panel");
   panel.classList.toggle("hidden", !state.cuts.length);
-  setupReferenceUrls.forEach((url) => URL.revokeObjectURL(url));
-  setupReferenceUrls = [];
   setupExportFiles = [];
   setupCutList.replaceChildren();
   const done = state.cuts.filter((cut) => cut.done).length;
@@ -326,52 +319,21 @@ async function renderSetupList() {
       <span class="cut-number">${String(index + 1).padStart(2, "0")}</span>
       <div class="cut-heading">
         <div><h3>${escapeHtml(cut.title)}</h3><p>${escapeHtml(cut.tip || "팁 없음")}</p></div>
-        <button class="cut-save-button hidden" type="button">이 컷 저장</button>
+        <span class="cut-status">${cut.done ? "촬영 완료" : "아직 안 찍음"}</span>
       </div>
-      <div class="reference-editor">
-        <div class="setup-references" aria-label="등록한 예시 사진"></div>
-        <label class="image-picker"><span>사진 추가</span><input type="file" accept="image/*" multiple /></label>
-      </div>`;
-    const previewList = item.querySelector(".setup-references");
-    const cutSaveButton = item.querySelector(".cut-save-button");
-    const input = item.querySelector("input");
+      <button class="shoot-cut-button" type="button">${cut.done ? "다시 찍기" : "카메라로 찍기"}</button>`;
+    item.classList.toggle("done", cut.done);
+    item.querySelector(".shoot-cut-button").addEventListener("click", () => startCamera(index));
     const savedImages = await getReferences(cut.id);
     totalImages += savedImages.length;
     savedImages.forEach((file, imageIndex) => {
       setupExportFiles.push({ cutIndex: index, imageIndex, file: makeReferenceFile(file, index, imageIndex) });
     });
-    if (savedImages.length) {
-      cutSaveButton.classList.remove("hidden");
-      cutSaveButton.textContent = `이 컷 저장 (${savedImages.length})`;
-      cutSaveButton.addEventListener("click", () => exportCut(index));
-    }
-    savedImages.forEach((file, imageIndex) => {
-      const preview = document.createElement("div");
-      preview.className = "setup-reference";
-      const url = URL.createObjectURL(file);
-      setupReferenceUrls.push(url);
-      preview.innerHTML = `<button class="preview-reference" type="button" aria-label="예시 사진 ${imageIndex + 1} 크게 보기"><img src="${url}" alt="예시 사진 ${imageIndex + 1}" /></button><button class="delete-reference" type="button" aria-label="예시 사진 ${imageIndex + 1} 삭제">×</button>`;
-      preview.querySelector(".preview-reference").addEventListener("click", () => openPreview(index, imageIndex, file));
-      preview.querySelector(".delete-reference").addEventListener("click", async () => {
-        const nextImages = savedImages.filter((_, savedIndex) => savedIndex !== imageIndex);
-        await putReferences(cut.id, nextImages);
-        cut.selectedReference = Math.min(cut.selectedReference || 0, Math.max(0, nextImages.length - 1));
-        saveState();
-        await renderSetupList();
-      });
-      previewList.append(preview);
-    });
-    input.addEventListener("change", async () => {
-      const files = Array.from(input.files || []);
-      if (!files.length) return;
-      await putReferences(cut.id, [...savedImages, ...files]);
-      input.value = "";
-      await renderSetupList();
-    });
     setupCutList.append(item);
   }
 
-  el("export-all-button").textContent = `올린 사진 전체 저장/공유 (${totalImages}장)`;
+  el("export-toolbar").classList.toggle("hidden", totalImages === 0);
+  el("export-all-button").textContent = `기존 저장 사진 꺼내기 (${totalImages}장)`;
   el("export-all-button").disabled = totalImages === 0;
 }
 
@@ -497,12 +459,15 @@ function closeExportSheet() {
   document.body.classList.remove("modal-open");
 }
 
-async function startCamera() {
+async function startCamera(selectedIndex = null) {
   if (!state.cuts.length) return;
   setupScreen.classList.add("hidden");
   cameraScreen.classList.remove("hidden");
-  currentIndex = Math.max(0, state.cuts.findIndex((cut) => !cut.done));
-  if (currentIndex < 0) currentIndex = 0;
+  if (Number.isInteger(selectedIndex)) currentIndex = selectedIndex;
+  else {
+    currentIndex = state.cuts.findIndex((cut) => !cut.done);
+    if (currentIndex < 0) currentIndex = 0;
+  }
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -528,56 +493,12 @@ async function renderCamera() {
   if (!cut) return;
   el("camera-counter").textContent = `컷 ${currentIndex + 1} / ${state.cuts.length} · 남은 컷 ${state.cuts.filter((item) => !item.done).length}`;
   el("camera-cut-title").textContent = cut.title;
-  el("camera-tip").textContent = cut.tip || "예시 구도에 맞춰 찍어 보세요";
-  el("opacity-slider").value = state.opacity;
+  el("camera-tip").textContent = cut.tip || "화면을 보고 바로 찍어 주세요";
   el("previous-button").disabled = currentIndex === 0;
   el("next-button").disabled = currentIndex === state.cuts.length - 1;
 
-  referenceUrls.forEach((url) => URL.revokeObjectURL(url));
-  referenceUrls = [];
-  currentReferences = await getReferences(cut.id);
-  cut.selectedReference = Math.min(cut.selectedReference || 0, Math.max(0, currentReferences.length - 1));
-  referenceUrls = currentReferences.map((reference) => URL.createObjectURL(reference));
-  referenceUrl = referenceUrls[cut.selectedReference] || null;
-  guideImage.src = referenceUrl || "";
-  guideImage.style.opacity = String(state.opacity / 100);
-  updateOverlayControls(Boolean(referenceUrl));
-  renderReferenceSelector();
   renderRequirements();
   renderDrawer();
-}
-
-function selectReference(index) {
-  const cut = state.cuts[currentIndex];
-  if (!cut || !referenceUrls.length) return;
-  cut.selectedReference = Math.min(referenceUrls.length - 1, Math.max(0, index));
-  referenceUrl = referenceUrls[cut.selectedReference];
-  guideImage.src = referenceUrl;
-  saveState();
-  updateOverlayControls(true);
-  renderReferenceSelector();
-}
-
-function renderReferenceSelector() {
-  const selector = el("reference-selector");
-  const thumbnails = el("reference-thumbnails");
-  const cut = state.cuts[currentIndex];
-  const selected = cut?.selectedReference || 0;
-  selector.classList.toggle("hidden", referenceUrls.length < 2);
-  thumbnails.replaceChildren();
-  referenceUrls.forEach((url, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `reference-thumbnail${index === selected ? " active" : ""}`;
-    button.setAttribute("aria-label", `예시 사진 ${index + 1} 선택`);
-    button.setAttribute("aria-pressed", String(index === selected));
-    button.innerHTML = `<img src="${url}" alt="" />`;
-    button.addEventListener("click", () => selectReference(index));
-    thumbnails.append(button);
-    if (index === selected) requestAnimationFrame(() => button.scrollIntoView({ block: "nearest", inline: "center" }));
-  });
-  el("reference-previous-button").disabled = selected === 0;
-  el("reference-next-button").disabled = selected >= referenceUrls.length - 1;
 }
 
 function renderRequirements() {
@@ -592,17 +513,6 @@ function renderRequirements() {
 function updateRequirementsHeight() {
   const height = el("requirements-banner").getBoundingClientRect().height;
   cameraScreen.style.setProperty("--requirements-height", `${height}px`);
-}
-
-function updateOverlayControls(hasReference) {
-  const controls = document.querySelector(".overlay-controls");
-  const toggle = el("overlay-toggle");
-  controls.classList.toggle("disabled", !hasReference);
-  toggle.disabled = !hasReference;
-  el("opacity-slider").disabled = !hasReference;
-  guideImage.classList.toggle("hidden", !hasReference || !state.overlayOn);
-  toggle.classList.toggle("active", hasReference && state.overlayOn);
-  toggle.textContent = hasReference ? (state.overlayOn ? "겹침 끄기" : "겹침 켜기") : "예시 사진 없음";
 }
 
 function moveCut(change) {
@@ -747,10 +657,6 @@ el("next-button").addEventListener("click", () => moveCut(1));
 el("shutter-button").addEventListener("click", capturePhoto);
 el("list-button").addEventListener("click", () => el("cut-drawer").classList.remove("hidden"));
 el("close-drawer-button").addEventListener("click", () => el("cut-drawer").classList.add("hidden"));
-el("overlay-toggle").addEventListener("click", () => { state.overlayOn = !state.overlayOn; saveState(); updateOverlayControls(Boolean(referenceUrl)); });
-el("opacity-slider").addEventListener("input", (event) => { state.opacity = Number(event.target.value); guideImage.style.opacity = String(state.opacity / 100); saveState(); });
-el("reference-previous-button").addEventListener("click", () => selectReference((state.cuts[currentIndex]?.selectedReference || 0) - 1));
-el("reference-next-button").addEventListener("click", () => selectReference((state.cuts[currentIndex]?.selectedReference || 0) + 1));
 el("requirements-toggle").addEventListener("click", () => {
   state.requirementsCollapsed = !state.requirementsCollapsed;
   saveState();
