@@ -192,20 +192,16 @@ const CAMPAIGNS = [
 ];
 
 const el = (id) => document.getElementById(id);
-const setupScreen = el("setup-screen");
-const cameraScreen = el("camera-screen");
 const cutInput = el("cut-input");
 const requirementsInput = el("requirements-input");
 const parseMessage = el("parse-message");
 const setupCutList = el("setup-cut-list");
-const video = el("camera-video");
 
 let activeCampaignId = loadActiveCampaignId();
 let state = loadState(activeCampaignId);
-let currentIndex = 0;
-let cameraStream = null;
 let setupExportFiles = [];
-let messageTimer = null;
+let setupObjectUrls = [];
+let renderVersion = 0;
 let previewObjectUrl = null;
 let previewFile = null;
 let pendingExportBatches = [];
@@ -275,7 +271,6 @@ function switchCampaign(campaignId) {
   activeCampaignId = campaignId;
   localStorage.setItem(ACTIVE_CAMPAIGN_KEY, activeCampaignId);
   state = loadState(activeCampaignId);
-  currentIndex = 0;
   cutInput.value = state.sourceText;
   requirementsInput.value = state.requirements || "";
   parseMessage.textContent = `${state.cuts.length}개 컷을 불러왔어요.`;
@@ -336,32 +331,50 @@ function createList() {
 }
 
 async function renderSetupList() {
+  const version = ++renderVersion;
   const panel = el("cut-list-panel");
   panel.classList.toggle("hidden", !state.cuts.length);
+  setupObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  setupObjectUrls = [];
   setupExportFiles = [];
   setupCutList.replaceChildren();
   const done = state.cuts.filter((cut) => cut.done).length;
-  el("setup-progress").textContent = `${done}/${state.cuts.length} 촬영`;
+  el("setup-progress").textContent = `${done}/${state.cuts.length} 완료`;
   el("export-all-button").disabled = true;
   let totalImages = 0;
 
+  renderRequirements();
+
   for (let index = 0; index < state.cuts.length; index += 1) {
     const cut = state.cuts[index];
+    const isVideoCut = /영상/.test(`${cut.title} ${cut.tip || ""}`);
+    const savedFiles = await getReferences(cut.id);
+    if (version !== renderVersion) return;
+    const uploadLabel = savedFiles.length ? "사진 더 올리기" : isVideoCut ? "영상 올리기" : "사진 올리기";
     const item = document.createElement("article");
     item.className = "setup-cut";
+    item.dataset.cutIndex = String(index);
     item.innerHTML = `
       <span class="cut-number">${String(index + 1).padStart(2, "0")}</span>
       <div class="cut-heading">
         <div><h3>${escapeHtml(cut.title)}</h3><p>${escapeHtml(cut.tip || "팁 없음")}</p></div>
-        <span class="cut-status">${cut.done ? "촬영 완료" : "아직 안 찍음"}</span>
+        <span class="cut-status">${cut.done ? "완료" : "아직 안 올림"}</span>
       </div>
-      <button class="shoot-cut-button" type="button">${cut.done ? "다시 찍기" : "카메라로 찍기"}</button>`;
+      <div class="reference-editor">
+        <div class="file-count">${savedFiles.length ? `${savedFiles.length}장` : ""}</div>
+        <div class="setup-references"></div>
+        <button class="shoot-cut-button" type="button">${uploadLabel}</button>
+        <input class="file-input hidden" type="file" accept="${isVideoCut ? "video/*,image/*" : "image/*"}" multiple>
+      </div>`;
     item.classList.toggle("done", cut.done);
-    item.querySelector(".shoot-cut-button").addEventListener("click", () => startCamera(index));
-    const savedImages = await getReferences(cut.id);
-    totalImages += savedImages.length;
-    savedImages.forEach((file, imageIndex) => {
+    const input = item.querySelector(".file-input");
+    item.querySelector(".shoot-cut-button").addEventListener("click", () => input.click());
+    input.addEventListener("change", () => handleSelectedFiles(index, input));
+    const references = item.querySelector(".setup-references");
+    totalImages += savedFiles.length;
+    savedFiles.forEach((file, imageIndex) => {
       setupExportFiles.push({ cutIndex: index, imageIndex, file: makeReferenceFile(file, index, imageIndex) });
+      references.append(createReferenceThumbnail(file, index, imageIndex));
     });
     setupCutList.append(item);
   }
@@ -371,7 +384,145 @@ async function renderSetupList() {
   el("export-all-button").disabled = totalImages === 0;
 }
 
+function createReferenceThumbnail(file, cutIndex, imageIndex) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "setup-reference";
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "preview-reference";
+  preview.setAttribute("aria-label", `컷 ${cutIndex + 1}의 ${imageIndex + 1}번째 파일 크게 보기`);
+  const url = URL.createObjectURL(file);
+  setupObjectUrls.push(url);
+  const media = document.createElement(file.type?.startsWith("video/") ? "video" : "img");
+  media.src = url;
+  if (media.tagName === "VIDEO") {
+    media.muted = true;
+    media.playsInline = true;
+    media.preload = "metadata";
+  } else {
+    media.alt = "";
+  }
+  preview.append(media);
+  preview.addEventListener("click", () => openPreview(cutIndex, imageIndex, file));
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "delete-reference";
+  remove.setAttribute("aria-label", `${imageIndex + 1}번째 파일 삭제`);
+  remove.textContent = "×";
+  remove.addEventListener("click", () => deleteReference(cutIndex, imageIndex));
+  wrapper.append(preview, remove);
+  return wrapper;
+}
+
+async function handleSelectedFiles(cutIndex, input) {
+  const selected = Array.from(input.files || []);
+  input.value = "";
+  if (!selected.length) return;
+  const cut = state.cuts[cutIndex];
+  const existing = await getReferences(cut.id);
+  const prepared = [];
+  let largeVideoCount = 0;
+
+  for (const file of selected) {
+    if (file.type.startsWith("video/")) {
+      if (file.size > 100 * 1024 * 1024) largeVideoCount += 1;
+      prepared.push(file);
+      continue;
+    }
+    try {
+      prepared.push(await resizeImage(file));
+    } catch (error) {
+      console.error(error);
+      showExportMessage(`${file.name || "사진"}을 읽지 못했어요. 다른 사진을 골라 주세요.`);
+    }
+  }
+  if (!prepared.length) return;
+  if (largeVideoCount) showExportMessage("영상이 커요. 저장하는 데 시간이 걸릴 수 있어요.");
+
+  try {
+    await putReferences(cut.id, existing.concat(prepared));
+  } catch (error) {
+    console.error(error);
+    showExportMessage(error?.name === "QuotaExceededError" ? "저장 공간이 부족해요." : "파일을 저장하지 못했어요. 다시 시도해 주세요.");
+    return;
+  }
+
+  cut.done = true;
+  saveState();
+  const savedCount = existing.length + prepared.length;
+  showExportMessage(`${cutIndex + 1}번 칸에 ${prepared.length}개를 올렸어요. 지금 ${savedCount}장 있어요.`);
+  await renderSetupList();
+  scrollToNextUndone(cutIndex);
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("사진을 읽을 수 없습니다."));
+    };
+    image.src = url;
+  });
+}
+
+async function resizeImage(file) {
+  const image = await loadImage(file);
+  const longest = Math.max(image.naturalWidth, image.naturalHeight);
+  const scale = Math.min(1, 2048 / longest);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+  if (!blob) throw new Error("사진 변환에 실패했습니다.");
+  const base = (file.name || "photo").replace(/\.[^.]+$/, "");
+  return new File([blob], `${base}.jpg`, { type: "image/jpeg", lastModified: file.lastModified || Date.now() });
+}
+
+async function deleteReference(cutIndex, imageIndex) {
+  const cut = state.cuts[cutIndex];
+  const files = await getReferences(cut.id);
+  files.splice(imageIndex, 1);
+  try {
+    await putReferences(cut.id, files);
+  } catch (error) {
+    console.error(error);
+    showExportMessage("파일을 삭제하지 못했어요. 다시 시도해 주세요.");
+    return;
+  }
+  if (!files.length) {
+    cut.done = false;
+    saveState();
+  }
+  showExportMessage(`${cutIndex + 1}번 칸에서 파일을 지웠어요.`);
+  await renderSetupList();
+}
+
+function scrollToNextUndone(afterIndex = -1) {
+  let nextIndex = state.cuts.findIndex((cut, index) => index > afterIndex && !cut.done);
+  if (nextIndex < 0) nextIndex = state.cuts.findIndex((cut) => !cut.done);
+  if (nextIndex < 0) return;
+  setupCutList.querySelector(`[data-cut-index="${nextIndex}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function openFirstUndonePicker() {
+  let index = state.cuts.findIndex((cut) => !cut.done);
+  if (index < 0) index = 0;
+  const item = setupCutList.querySelector(`[data-cut-index="${index}"]`);
+  item?.scrollIntoView({ behavior: "smooth", block: "center" });
+  item?.querySelector(".file-input")?.click();
+}
+
 function referenceExtension(type) {
+  if (/video\/quicktime/i.test(type)) return "mov";
+  if (/video\/webm/i.test(type)) return "webm";
+  if (/video/i.test(type)) return "mp4";
   if (/svg/i.test(type)) return "svg";
   if (/png/i.test(type)) return "png";
   if (/webp/i.test(type)) return "webp";
@@ -442,17 +593,16 @@ function exportAll() {
   exportFiles(setupExportFiles.map((item) => item.file), "컷가이드 사진 전체");
 }
 
-function exportCut(cutIndex) {
-  const files = setupExportFiles.filter((item) => item.cutIndex === cutIndex).map((item) => item.file);
-  exportFiles(files, `컷 ${cutIndex + 1} 사진`);
-}
-
 function openPreview(cutIndex, imageIndex, blob) {
   closePreview();
   previewFile = makeReferenceFile(blob, cutIndex, imageIndex);
   previewObjectUrl = URL.createObjectURL(blob);
-  el("preview-title").textContent = `컷 ${String(cutIndex + 1).padStart(2, "0")} · 사진 ${String(imageIndex + 1).padStart(2, "0")}`;
-  el("preview-image").src = previewObjectUrl;
+  el("preview-title").textContent = `컷 ${String(cutIndex + 1).padStart(2, "0")} · 파일 ${String(imageIndex + 1).padStart(2, "0")}`;
+  const isVideo = blob.type?.startsWith("video/");
+  el("preview-image").classList.toggle("hidden", isVideo);
+  el("preview-video").classList.toggle("hidden", !isVideo);
+  if (isVideo) el("preview-video").src = previewObjectUrl;
+  else el("preview-image").src = previewObjectUrl;
   el("preview-modal").classList.remove("hidden");
   document.body.classList.add("modal-open");
   el("preview-close-button").focus();
@@ -460,6 +610,9 @@ function openPreview(cutIndex, imageIndex, blob) {
 
 function closePreview() {
   el("preview-modal").classList.add("hidden");
+  el("preview-video").pause();
+  el("preview-video").removeAttribute("src");
+  el("preview-image").removeAttribute("src");
   if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
   previewObjectUrl = null;
   previewFile = null;
@@ -493,142 +646,12 @@ function closeExportSheet() {
   document.body.classList.remove("modal-open");
 }
 
-async function startCamera(selectedIndex = null) {
-  if (!state.cuts.length) return;
-  setupScreen.classList.add("hidden");
-  cameraScreen.classList.remove("hidden");
-  if (Number.isInteger(selectedIndex)) currentIndex = selectedIndex;
-  else {
-    currentIndex = state.cuts.findIndex((cut) => !cut.done);
-    if (currentIndex < 0) currentIndex = 0;
-  }
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-    });
-    video.srcObject = cameraStream;
-    await video.play();
-    await renderCamera();
-  } catch (error) {
-    showCameraMessage("카메라 권한을 허용해 주세요.", 4500);
-    console.error(error);
-  }
-}
-
-function stopCamera() {
-  cameraStream?.getTracks().forEach((track) => track.stop());
-  cameraStream = null;
-  video.srcObject = null;
-}
-
-async function renderCamera() {
-  const cut = state.cuts[currentIndex];
-  if (!cut) return;
-  el("camera-counter").textContent = `컷 ${currentIndex + 1} / ${state.cuts.length} · 남은 컷 ${state.cuts.filter((item) => !item.done).length}`;
-  el("camera-cut-title").textContent = cut.title;
-  el("camera-tip").textContent = cut.tip || "화면을 보고 바로 찍어 주세요";
-  el("previous-button").disabled = currentIndex === 0;
-  el("next-button").disabled = currentIndex === state.cuts.length - 1;
-
-  renderRequirements();
-  renderDrawer();
-}
-
 function renderRequirements() {
   const summary = state.requirements?.trim() || "입력된 업체 필수 조건이 없어요.";
   el("requirements-summary").textContent = summary;
   el("requirements-banner").classList.toggle("collapsed", state.requirementsCollapsed);
   el("requirements-toggle").setAttribute("aria-expanded", String(!state.requirementsCollapsed));
   el("requirements-chevron").textContent = state.requirementsCollapsed ? "⌄" : "⌃";
-  requestAnimationFrame(updateRequirementsHeight);
-}
-
-function updateRequirementsHeight() {
-  const height = el("requirements-banner").getBoundingClientRect().height;
-  cameraScreen.style.setProperty("--requirements-height", `${height}px`);
-}
-
-function moveCut(change) {
-  currentIndex = Math.min(state.cuts.length - 1, Math.max(0, currentIndex + change));
-  renderCamera();
-}
-
-async function capturePhoto() {
-  if (!video.videoWidth || !video.videoHeight) {
-    showCameraMessage("카메라가 준비될 때까지 잠깐 기다려 주세요.");
-    return;
-  }
-  const canvas = el("capture-canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-  if (!blob) return;
-
-  const cut = state.cuts[currentIndex];
-  const filename = makeFilename(currentIndex + 1, cut.title);
-  const file = new File([blob], filename, { type: "image/jpeg" });
-  let saved = false;
-
-  try {
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename });
-      saved = true;
-    } else {
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1500);
-      saved = true;
-    }
-  } catch (error) {
-    if (error?.name !== "AbortError") showCameraMessage("저장하지 못했어요. 다시 찍어 주세요.");
-  }
-
-  if (!saved) return;
-  cut.done = true;
-  saveState();
-  showCameraMessage(`${filename} 저장 완료`);
-  const nextUndone = state.cuts.findIndex((item, index) => index > currentIndex && !item.done);
-  if (nextUndone >= 0) currentIndex = nextUndone;
-  else if (currentIndex < state.cuts.length - 1) currentIndex += 1;
-  await renderCamera();
-}
-
-function makeFilename(number, title) {
-  const safeTitle = title.replace(/[^가-힣a-zA-Z0-9]+/g, "").slice(0, 24) || "사진";
-  return `컷${String(number).padStart(2, "0")}_${safeTitle}.jpg`;
-}
-
-function renderDrawer() {
-  const drawerList = el("drawer-list");
-  drawerList.replaceChildren();
-  const done = state.cuts.filter((cut) => cut.done).length;
-  el("drawer-progress").textContent = `${done}컷 완료 · ${state.cuts.length - done}컷 남음`;
-  state.cuts.forEach((cut, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `drawer-cut${cut.done ? " done" : ""}${index === currentIndex ? " current" : ""}`;
-    button.innerHTML = `<span class="cut-number">${cut.done ? "✓" : String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(cut.title)}</strong><small>${cut.done ? "다시 찍기" : "찍기"}</small>`;
-    button.addEventListener("click", () => {
-      currentIndex = index;
-      el("cut-drawer").classList.add("hidden");
-      renderCamera();
-    });
-    drawerList.append(button);
-  });
-}
-
-function showCameraMessage(message, duration = 2200) {
-  const output = el("camera-message");
-  output.textContent = message;
-  output.classList.add("show");
-  clearTimeout(messageTimer);
-  messageTimer = setTimeout(() => output.classList.remove("show"), duration);
 }
 
 function escapeHtml(value) {
@@ -683,14 +706,7 @@ requirementsInput.addEventListener("input", () => {
   state.requirements = requirementsInput.value.trim();
   saveState();
 });
-el("start-button").addEventListener("click", startCamera);
-el("back-button").addEventListener("click", () => { stopCamera(); cameraScreen.classList.add("hidden"); setupScreen.classList.remove("hidden"); renderSetupList(); });
-el("edit-list-button").addEventListener("click", () => el("back-button").click());
-el("previous-button").addEventListener("click", () => moveCut(-1));
-el("next-button").addEventListener("click", () => moveCut(1));
-el("shutter-button").addEventListener("click", capturePhoto);
-el("list-button").addEventListener("click", () => el("cut-drawer").classList.remove("hidden"));
-el("close-drawer-button").addEventListener("click", () => el("cut-drawer").classList.add("hidden"));
+el("start-button").addEventListener("click", openFirstUndonePicker);
 el("requirements-toggle").addEventListener("click", () => {
   state.requirementsCollapsed = !state.requirementsCollapsed;
   saveState();
@@ -709,8 +725,6 @@ window.addEventListener("keydown", (event) => {
   if (!el("export-sheet").classList.contains("hidden")) closeExportSheet();
 });
 
-window.addEventListener("pagehide", stopCamera);
-window.addEventListener("resize", updateRequirementsHeight);
 cutInput.value = state.sourceText;
 requirementsInput.value = state.requirements || "";
 renderSetupList();

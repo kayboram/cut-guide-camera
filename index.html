@@ -10,9 +10,9 @@
   <body>
     <main id="setup-screen" class="screen setup-screen">
       <header class="setup-header">
-        <p class="eyebrow">사진 촬영 도우미</p>
+        <p class="eyebrow">사진 업로드 도우미</p>
         <h1>컷가이드 카메라</h1>
-        <p>캠페인을 고르고, 찍어야 할 칸에서 바로 카메라를 열어요.</p>
+        <p>캠페인을 고르고, 기본 카메라로 찍은 사진을 칸마다 올려요.</p>
       </header>
 
       <section class="panel">
@@ -40,11 +40,18 @@
         <div class="section-title">
           <div>
             <span class="step">2</span>
-            <h2>찍어야 할 사진</h2>
+            <h2>올려야 할 사진</h2>
           </div>
           <span id="setup-progress" class="pill"></span>
         </div>
-        <p class="help">찍을 칸의 <strong>카메라로 찍기</strong>를 누르면 바로 그 사진부터 시작해요.</p>
+        <section id="requirements-banner" class="requirements-banner" aria-label="업체 필수 요약">
+          <button id="requirements-toggle" type="button" aria-expanded="true">
+            <span>업체 필수 요약</span>
+            <span id="requirements-chevron" aria-hidden="true">⌃</span>
+          </button>
+          <p id="requirements-summary"></p>
+        </section>
+        <p class="help">아이폰 <strong>기본 카메라</strong>로 찍고, 사진첩에서 골라 올리면 돼요. 사진은 이 휴대폰 안에만 저장돼요.</p>
         <div id="export-toolbar" class="export-toolbar hidden">
           <button id="export-all-button" class="export-all-button" type="button" disabled>기존 저장 사진 꺼내기 (0장)</button>
           <p>전에 넣어 둔 사진은 지우지 않았어요. 필요하면 여기서 사진첩으로 옮길 수 있어요.</p>
@@ -52,59 +59,11 @@
         <p id="export-message" class="message export-message" aria-live="polite"></p>
         <div id="setup-cut-list" class="setup-cut-list"></div>
         <div class="setup-actions">
-          <button id="start-button" class="primary-button" type="button">안 찍은 첫 칸부터 시작</button>
+          <button id="start-button" class="primary-button" type="button">안 찍은 첫 칸부터 올리기</button>
         </div>
       </section>
 
       <footer class="privacy-note">사진은 이 휴대폰 안에서만 처리되고 서버로 전송되지 않아요.</footer>
-    </main>
-
-    <main id="camera-screen" class="screen camera-screen hidden">
-      <video id="camera-video" autoplay playsinline muted></video>
-      <div class="camera-shade camera-shade-top"></div>
-      <div class="camera-shade camera-shade-bottom"></div>
-
-      <section id="requirements-banner" class="requirements-banner" aria-label="업체 필수 요약">
-        <button id="requirements-toggle" type="button" aria-expanded="true">
-          <span>업체 필수 요약</span>
-          <span id="requirements-chevron" aria-hidden="true">⌃</span>
-        </button>
-        <p id="requirements-summary"></p>
-      </section>
-
-      <header class="camera-header">
-        <button id="back-button" class="round-button" type="button" aria-label="목록으로 돌아가기">‹</button>
-        <div class="camera-title-wrap">
-          <p id="camera-counter"></p>
-          <h1 id="camera-cut-title"></h1>
-          <p id="camera-tip"></p>
-        </div>
-        <button id="list-button" class="round-button" type="button" aria-label="컷 목록 열기">☰</button>
-      </header>
-
-      <section class="camera-actions">
-        <button id="previous-button" class="nav-button" type="button">이전</button>
-        <button id="shutter-button" class="shutter-button" type="button" aria-label="사진 찍기">
-          <span></span>
-        </button>
-        <button id="next-button" class="nav-button" type="button">다음</button>
-      </section>
-
-      <p id="camera-message" class="camera-message" aria-live="polite"></p>
-
-      <aside id="cut-drawer" class="cut-drawer hidden" aria-label="전체 컷 목록">
-        <div class="drawer-header">
-          <div>
-            <p class="eyebrow">전체 목록</p>
-            <h2 id="drawer-progress"></h2>
-          </div>
-          <button id="close-drawer-button" class="round-button dark" type="button" aria-label="목록 닫기">×</button>
-        </div>
-        <div id="drawer-list" class="drawer-list"></div>
-        <button id="edit-list-button" class="secondary-button" type="button">촬영 목록으로 돌아가기</button>
-      </aside>
-
-      <canvas id="capture-canvas" class="hidden"></canvas>
     </main>
 
     <section id="preview-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
@@ -112,13 +71,14 @@
       <div class="preview-card">
         <div class="preview-header">
           <div>
-            <p class="eyebrow">사진 미리보기</p>
+            <p class="eyebrow">파일 미리보기</p>
             <h2 id="preview-title"></h2>
           </div>
           <button id="preview-close-button" class="modal-close-button" type="button" aria-label="미리보기 닫기">×</button>
         </div>
-        <img id="preview-image" alt="선택한 예시 사진 크게 보기" />
-        <button id="preview-save-button" class="primary-button" type="button">이 사진 저장/공유</button>
+        <img id="preview-image" alt="선택한 사진 크게 보기" />
+        <video id="preview-video" class="hidden" controls playsinline></video>
+        <button id="preview-save-button" class="primary-button" type="button">이 파일 저장/공유</button>
       </div>
     </section>
 
