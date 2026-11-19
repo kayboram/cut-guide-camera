@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const files = Object.fromEntries(
-  await Promise.all(["index.html", "app.js", "styles.css"].map(async (name) => [name, await readFile(new URL(name, import.meta.url), "utf8")])),
+  await Promise.all(["index.html", "app.js", "styles.css", "docs/multica-proxy.md"].map(async (name) => [name, await readFile(new URL(name, import.meta.url), "utf8")])),
 );
 const allSource = Object.values(files).join("\n");
 
@@ -22,6 +22,25 @@ for (const value of [
 ]) {
   assert.ok(files["app.js"].includes(`"${value}"`), `${value} must stay unchanged`);
 }
+
+assert.ok(files["app.js"].includes('const MULTICA_SETTINGS_KEY = "cgc-multica-settings-v1"'));
+assert.equal((files["app.js"].match(/cgc-multica-settings-v1/g) || []).length, 1, "new settings must use one dedicated key");
+for (const [campaign, issue] of Object.entries({
+  "garden-of-life-women-probiotic": "BLOG-1053",
+  "hidehere-hospital": "BLOG-1240",
+  "bad-luck-cleaner-chime": "BLOG-1257",
+  "ofmom-slim-inner-beauty": "BLOG-1295",
+  "arpe-patch-a": "BLOG-1270",
+  "arpe-patch-b": "BLOG-1270",
+  "marienb-ntz20": "BLOG-1216",
+})) {
+  assert.ok(files["app.js"].includes(`"${campaign}": "${issue}"`), `${campaign} must map to ${issue}`);
+}
+assert.match(files["app.js"], /formData\.append\("issue_id", session\.issue\.id\)/);
+assert.match(files["app.js"], /attachment_ids: session\.files\.map/);
+assert.match(files["docs/multica-proxy.md"], /Access-Control-Allow-Origin/);
+assert.equal((files["index.html"].match(/완료 · 멀티카로 전송/g) || []).length, 0, "send labels are populated from state so empty campaigns stay disabled");
+assert.equal((files["index.html"].match(/class="multica-send-button"/g) || []).length, 3, "two send buttons plus ZIP fallback must remain");
 
 for (const [name, count] of [
   ["올센느 8컷 · 기존 작업", 8],

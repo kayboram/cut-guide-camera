@@ -4,6 +4,17 @@ const ACTIVE_CAMPAIGN_KEY = "cut-guide-camera-active-campaign-v2";
 const DB_NAME = "cut-guide-camera";
 const DB_STORE = "reference-images";
 const LEGACY_CAMPAIGN_ID = "legacy-allsenne";
+const MULTICA_SETTINGS_KEY = "cgc-multica-settings-v1";
+const MULTICA_API_BASE = "https://api.multica.ai";
+const MULTICA_ISSUES = {
+  "garden-of-life-women-probiotic": "BLOG-1053",
+  "hidehere-hospital": "BLOG-1240",
+  "bad-luck-cleaner-chime": "BLOG-1257",
+  "ofmom-slim-inner-beauty": "BLOG-1295",
+  "arpe-patch-a": "BLOG-1270",
+  "arpe-patch-b": "BLOG-1270",
+  "marienb-ntz20": "BLOG-1216",
+};
 
 const SAMPLE_TEXT = `| 컷 | 무엇을 | 팁 |
 |---|---|---|
@@ -205,6 +216,9 @@ let renderVersion = 0;
 let previewObjectUrl = null;
 let previewFile = null;
 let pendingExportBatches = [];
+let multicaSettings = loadMulticaSettings();
+let transferSession = null;
+let transferAbortController = null;
 
 function emptyState(sourceText = "", requirements = "") {
   return { sourceText, requirements, requirementsCollapsed: false, cuts: [], opacity: 38, overlayOn: true };
@@ -366,7 +380,10 @@ async function renderSetupList() {
         <button class="shoot-cut-button" type="button">${uploadLabel}</button>
         <input class="file-input hidden" type="file" accept="${isVideoCut ? "video/*,image/*" : "image/*"}" multiple>
       </div>`;
+    const wasSent = multicaSettings.lastSent?.[activeCampaignId]?.sentCuts?.includes(index);
     item.classList.toggle("done", cut.done);
+    item.classList.toggle("sent", Boolean(wasSent));
+    if (wasSent) item.querySelector(".cut-status").textContent = "전송됨";
     const input = item.querySelector(".file-input");
     item.querySelector(".shoot-cut-button").addEventListener("click", () => input.click());
     input.addEventListener("change", () => handleSelectedFiles(index, input));
@@ -382,6 +399,7 @@ async function renderSetupList() {
   el("export-toolbar").classList.toggle("hidden", totalImages === 0);
   el("export-all-button").textContent = `기존 저장 사진 꺼내기 (${totalImages}장)`;
   el("export-all-button").disabled = totalImages === 0;
+  updateMulticaActions(totalImages);
 }
 
 function createReferenceThumbnail(file, cutIndex, imageIndex) {
@@ -692,6 +710,390 @@ async function getReferences(key) {
   }
 }
 
+function loadMulticaSettings() {
+  const fallback = { token: "", workspaceSlug: "affiliate-blog", proxyBase: "", lastSent: {}, manualIssue: {} };
+  try {
+    const saved = JSON.parse(localStorage.getItem(MULTICA_SETTINGS_KEY));
+    return { ...fallback, ...saved, lastSent: saved?.lastSent || {}, manualIssue: saved?.manualIssue || {} };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function saveMulticaSettings() {
+  localStorage.setItem(MULTICA_SETTINGS_KEY, JSON.stringify(multicaSettings));
+}
+
+function campaignName() {
+  return (CAMPAIGNS.find((item) => item.id === activeCampaignId)?.name || activeCampaignId).replace(/ · \d+컷$/, "");
+}
+
+function activeIssueIdentifier() {
+  return MULTICA_ISSUES[activeCampaignId] || multicaSettings.manualIssue?.[activeCampaignId] || "";
+}
+
+function maskToken(token) {
+  if (!token) return "저장된 토큰 없음";
+  if (token.length < 12) return `${token.slice(0, 4)}…`;
+  return `${token.slice(0, 8)}…${token.slice(-3)}`;
+}
+
+function maskSecrets(value) {
+  let text = String(value?.message || value || "알 수 없는 오류");
+  if (multicaSettings.token) text = text.split(multicaSettings.token).join(maskToken(multicaSettings.token));
+  return text.replace(/mul_[A-Za-z0-9._-]+/g, (token) => maskToken(token));
+}
+
+function formatKst(value = Date.now(), includeDate = true) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: includeDate ? "numeric" : undefined,
+    month: includeDate ? "2-digit" : undefined,
+    day: includeDate ? "2-digit" : undefined,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value)).replace(/\. /g, "-").replace(/\.$/, "");
+}
+
+function updateMulticaActions(totalFiles = setupExportFiles.length) {
+  const issueMissing = !activeIssueIdentifier();
+  const label = totalFiles ? (issueMissing ? "연결할 이슈를 설정해 주세요" : "완료 · 멀티카로 전송") : "사진을 먼저 올려 주세요";
+  ["multica-send-top", "multica-send-bottom"].forEach((id) => {
+    el(id).disabled = totalFiles === 0;
+    el(id).textContent = label;
+  });
+  const sent = multicaSettings.lastSent?.[activeCampaignId];
+  el("multica-last-sent").classList.toggle("hidden", !sent);
+  if (sent) el("multica-last-sent").textContent = `전송 기록 · ${sent.issue}에 ${sent.count}장 · ${formatKst(sent.sentAt, false)}`;
+}
+
+function openMulticaSettings(message = "") {
+  el("multica-token").value = "";
+  el("multica-token").placeholder = multicaSettings.token ? maskToken(multicaSettings.token) : "mul_…";
+  el("multica-token-saved").textContent = maskToken(multicaSettings.token);
+  el("multica-workspace").value = multicaSettings.workspaceSlug || "affiliate-blog";
+  el("multica-proxy").value = multicaSettings.proxyBase || "";
+  const needsManual = !MULTICA_ISSUES[activeCampaignId];
+  el("multica-manual-issue-wrap").classList.toggle("hidden", !needsManual);
+  el("multica-manual-issue").value = multicaSettings.manualIssue?.[activeCampaignId] || "";
+  el("multica-settings-message").textContent = message;
+  el("multica-settings-modal").classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  el("multica-token").focus();
+}
+
+function closeMulticaSettings() {
+  el("multica-settings-modal").classList.add("hidden");
+  if (el("multica-transfer-modal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+function persistSettingsForm() {
+  const newToken = el("multica-token").value.trim();
+  if (newToken && !newToken.startsWith("mul_")) throw new Error("토큰은 mul_로 시작해야 해요.");
+  if (newToken) multicaSettings.token = newToken;
+  multicaSettings.workspaceSlug = el("multica-workspace").value.trim() || "affiliate-blog";
+  multicaSettings.proxyBase = el("multica-proxy").value.trim().replace(/\/+$/, "");
+  if (!multicaSettings.manualIssue) multicaSettings.manualIssue = {};
+  if (!MULTICA_ISSUES[activeCampaignId]) {
+    const manual = el("multica-manual-issue").value.trim().toUpperCase();
+    if (manual) multicaSettings.manualIssue[activeCampaignId] = manual;
+    else delete multicaSettings.manualIssue[activeCampaignId];
+  }
+  saveMulticaSettings();
+  el("multica-token-saved").textContent = maskToken(multicaSettings.token);
+  el("multica-token").value = "";
+  el("multica-token").placeholder = multicaSettings.token ? maskToken(multicaSettings.token) : "mul_…";
+  updateMulticaActions();
+}
+
+function multicaUrl(path) {
+  return `${multicaSettings.proxyBase || MULTICA_API_BASE}${path}`;
+}
+
+async function multicaFetch(path, options = {}) {
+  if (!multicaSettings.token) throw new Error("멀티카 API 토큰을 먼저 저장해 주세요.");
+  const headers = new Headers(options.headers || {});
+  headers.set("Authorization", `Bearer ${multicaSettings.token}`);
+  if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  const separator = path.includes("?") ? "&" : "?";
+  const scopedPath = `${path}${separator}workspace_slug=${encodeURIComponent(multicaSettings.workspaceSlug || "affiliate-blog")}`;
+  const response = await fetch(multicaUrl(scopedPath), { ...options, headers });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(body || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function testMulticaConnection() {
+  try {
+    persistSettingsForm();
+    el("multica-settings-message").textContent = "연결 확인 중…";
+    const me = await multicaFetch("/api/me");
+    const name = me?.name || me?.display_name || me?.user?.name || "사용자";
+    el("multica-settings-message").textContent = `연결됨(${name})`;
+  } catch (error) {
+    if (error?.status === 401) el("multica-settings-message").textContent = "토큰이 만료됐거나 틀렸어요.";
+    else if (error instanceof TypeError) el("multica-settings-message").textContent = "이 브라우저에서는 멀티카로 직접 연결이 막혀 있어요(프록시 주소를 넣어 주세요).";
+    else el("multica-settings-message").textContent = maskSecrets(error);
+  }
+}
+
+function safeCutName(value) {
+  return Array.from(String(value)
+    .normalize("NFKC")
+    .replace(/[()[\]{}·—–/\\:*?"<>|]/g, "")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, ""))
+    .slice(0, 24)
+    .join("") || "컷";
+}
+
+function sourceExtension(blob) {
+  const nameMatch = blob?.name?.match(/\.([A-Za-z0-9]{2,5})$/);
+  return nameMatch ? nameMatch[1].toLowerCase() : referenceExtension(blob.type || "image/jpeg");
+}
+
+function multicaFilename(blob, cutIndex, imageIndex, cutTitle) {
+  const suffix = imageIndex ? `_${imageIndex + 1}` : "";
+  return `${String(cutIndex + 1).padStart(2, "0")}_${safeCutName(cutTitle)}${suffix}.${sourceExtension(blob)}`;
+}
+
+async function collectTransferFiles() {
+  const items = [];
+  for (let cutIndex = 0; cutIndex < state.cuts.length; cutIndex += 1) {
+    const blobs = await getReferences(state.cuts[cutIndex].id);
+    blobs.forEach((blob, imageIndex) => {
+      const name = multicaFilename(blob, cutIndex, imageIndex, state.cuts[cutIndex].title);
+      items.push({ cutIndex, cutTitle: state.cuts[cutIndex].title, file: new File([blob], name, { type: blob.type || "application/octet-stream", lastModified: blob.lastModified || Date.now() }), attachmentId: "", error: "" });
+    });
+  }
+  return items;
+}
+
+function buildTransferComment(session, sentAt = Date.now()) {
+  const rows = [];
+  const missing = [];
+  let photos = 0;
+  let videos = 0;
+  state.cuts.forEach((cut, cutIndex) => {
+    const files = session.files.filter((item) => item.cutIndex === cutIndex);
+    if (!files.length) {
+      missing.push(`${cutIndex + 1}${/선택/.test(cut.title) ? " (선택)" : ""} ${cut.title.replace(/^\(선택\)\s*/, "")}`);
+      return;
+    }
+    files.forEach((item) => item.file.type.startsWith("video/") ? videos += 1 : photos += 1);
+    rows.push(`| ${String(cutIndex + 1).padStart(2, "0")} | ${cut.title.replace(/\|/g, "\\|")} | ${files.map((item) => item.file.name).join("<br>")} | ${files.length} |`);
+  });
+  const optionalMissing = missing.filter((item) => item.includes("(선택)"));
+  return `## 컷가이드 전송 완료 — ${campaignName()} · ${state.cuts.length}컷\n\n- 이슈: ${session.issueIdentifier}\n- 전송: ${formatKst(sentAt)} (KST)\n- 파일: ${session.files.length}장 (사진 ${photos} / 영상 ${videos})\n- 비고: ${optionalMissing.length ? `선택 컷 ${optionalMissing.map((item) => item.split(" ")[0]).join("·")} 은 미촬영` : "없음"}\n\n| 컷 | 컷 이름 | 파일 | 장수 |\n|---|---|---|---|\n${rows.join("\n")}\n\n${missing.length ? `누락 컷: ${missing.join(", ")}\n` : ""}컷가이드 카메라에서 자동 전송됨`;
+}
+
+function setTransferProgress(completed, total, text) {
+  el("multica-progress-wrap").classList.remove("hidden");
+  el("multica-progress-bar").style.width = `${total ? Math.round((completed / total) * 100) : 0}%`;
+  el("multica-progress-text").textContent = text;
+}
+
+function openTransferModal() {
+  el("multica-transfer-modal").classList.remove("hidden");
+  el("multica-fallback").classList.add("hidden");
+  el("multica-error-details").classList.add("hidden");
+  el("multica-retry").classList.add("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeTransferModal() {
+  if (transferAbortController) transferAbortController.abort();
+  el("multica-transfer-modal").classList.add("hidden");
+  if (el("multica-settings-modal").classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+function showTransferFailure(error, failedCount = 0) {
+  const message = failedCount ? `${failedCount}장 실패 · 전송에 실패했어요. 토큰/프록시 설정을 확인해 주세요.` : "전송에 실패했어요. 토큰/프록시 설정을 확인해 주세요.";
+  el("multica-transfer-summary").textContent = message;
+  el("multica-error-text").textContent = maskSecrets(error);
+  el("multica-error-details").classList.remove("hidden");
+  el("multica-fallback").classList.remove("hidden");
+  el("multica-cancel").classList.add("hidden");
+  setTransferProgress(0, transferSession?.files?.length || 0, "직접 전송을 사용할 수 없어요. 아래 공유 방법을 이용해 주세요.");
+  el("multica-retry").classList.toggle("hidden", !transferSession?.issue);
+  el("multica-retry").textContent = failedCount ? `${failedCount}장 실패 · 다시 시도` : "다시 시도";
+}
+
+async function uploadTransferFiles(session) {
+  const pending = session.files.filter((item) => !item.attachmentId);
+  let completed = session.files.length - pending.length;
+  transferAbortController = new AbortController();
+  for (const item of pending) {
+    if (transferAbortController.signal.aborted) throw new DOMException("전송을 취소했어요.", "AbortError");
+    setTransferProgress(completed, session.files.length, `전송 중 ${completed + 1}/${session.files.length} · ${String(item.cutIndex + 1).padStart(2, "0")} ${item.cutTitle}`);
+    const formData = new FormData();
+    formData.append("file", item.file, item.file.name);
+    formData.append("issue_id", session.issue.id);
+    try {
+      const attachment = await multicaFetch("/api/upload-file", { method: "POST", body: formData, signal: transferAbortController.signal });
+      item.attachmentId = attachment.id;
+      item.error = "";
+      completed += 1;
+    } catch (error) {
+      item.error = maskSecrets(error);
+    }
+  }
+  const failed = session.files.filter((item) => !item.attachmentId);
+  if (failed.length) throw new Error(failed.map((item) => `${item.file.name}: ${item.error}`).join("\n"));
+}
+
+async function finishTransfer(session) {
+  const sentAt = Date.now();
+  session.comment = buildTransferComment(session, sentAt);
+  await multicaFetch(`/api/issues/${encodeURIComponent(session.issue.id)}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ content: session.comment, type: "comment", attachment_ids: session.files.map((item) => item.attachmentId) }),
+    signal: transferAbortController?.signal,
+  });
+  const sentCuts = [...new Set(session.files.map((item) => item.cutIndex))];
+  multicaSettings.lastSent[activeCampaignId] = { sentAt, issue: session.issueIdentifier, count: session.files.length, sentCuts };
+  saveMulticaSettings();
+  setTransferProgress(session.files.length, session.files.length, `${session.issueIdentifier}에 ${session.files.length}장 전송 완료 · ${formatKst(sentAt, false)}`);
+  el("multica-transfer-summary").textContent = `${campaignName()} → ${session.issueIdentifier} (${session.issue.title || session.issueIdentifier})\n전송이 끝났어요.`;
+  el("multica-cancel").classList.add("hidden");
+  updateMulticaActions(session.files.length);
+  await renderSetupList();
+}
+
+async function runTransfer(session) {
+  try {
+    el("multica-cancel").classList.remove("hidden");
+    await uploadTransferFiles(session);
+    await finishTransfer(session);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      el("multica-transfer-summary").textContent = "전송을 취소했어요. 올린 사진은 이 휴대폰에 그대로 있어요.";
+      return;
+    }
+    showTransferFailure(error, session.files.filter((item) => !item.attachmentId).length);
+  } finally {
+    transferAbortController = null;
+  }
+}
+
+async function startMulticaTransfer() {
+  const issueIdentifier = activeIssueIdentifier();
+  if (!issueIdentifier) {
+    openMulticaSettings("이 캠페인은 연결된 멀티카 이슈가 없어요. 이슈 ID를 입력해 주세요.");
+    return;
+  }
+  if (!multicaSettings.token) {
+    openMulticaSettings("멀티카 API 토큰을 먼저 저장해 주세요.");
+    return;
+  }
+  const previous = multicaSettings.lastSent?.[activeCampaignId];
+  if (previous && !confirm(`이미 ${formatKst(previous.sentAt, false)}에 ${previous.count}장을 보냈어요. 또 보낼까요?`)) return;
+  const files = await collectTransferFiles();
+  if (!files.length) return;
+  openTransferModal();
+  el("multica-transfer-summary").textContent = `${campaignName()}의 ${files.length}장을 확인하고 있어요.`;
+  setTransferProgress(0, files.length, "멀티카 이슈 연결 확인 중…");
+  try {
+    const issue = await multicaFetch(`/api/issues/${encodeURIComponent(issueIdentifier)}`);
+    transferSession = { issueIdentifier, issue, files, comment: "" };
+    const target = `${campaignName()} → ${issueIdentifier} (${issue.title || issueIdentifier})`;
+    el("multica-transfer-summary").textContent = target;
+    if (!confirm(`${target}\n\n이 이슈로 ${files.length}장을 전송할까요?`)) {
+      closeTransferModal();
+      return;
+    }
+    await runTransfer(transferSession);
+  } catch (error) {
+    transferSession = { issueIdentifier, issue: null, files, comment: "" };
+    transferSession.comment = buildTransferComment(transferSession);
+    showTransferFailure(error);
+  }
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zipHeader(size) {
+  const bytes = new Uint8Array(size);
+  const view = new DataView(bytes.buffer);
+  return { bytes, u16: (offset, value) => view.setUint16(offset, value, true), u32: (offset, value) => view.setUint32(offset, value, true) };
+}
+
+async function makeZip(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const file of files) {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const name = encoder.encode(file.name);
+    const crc = crc32(data);
+    const local = zipHeader(30);
+    local.u32(0, 0x04034b50); local.u16(4, 20); local.u16(6, 0x0800); local.u16(8, 0);
+    local.u32(14, crc); local.u32(18, data.length); local.u32(22, data.length); local.u16(26, name.length);
+    localParts.push(local.bytes, name, data);
+    const central = zipHeader(46);
+    central.u32(0, 0x02014b50); central.u16(4, 20); central.u16(6, 20); central.u16(8, 0x0800); central.u16(10, 0);
+    central.u32(16, crc); central.u32(20, data.length); central.u32(24, data.length); central.u16(28, name.length); central.u32(42, offset);
+    centralParts.push(central.bytes, name);
+    offset += local.bytes.length + name.length + data.length;
+  }
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = zipHeader(22);
+  end.u32(0, 0x06054b50); end.u16(8, files.length); end.u16(10, files.length); end.u32(12, centralSize); end.u32(16, offset);
+  return new Blob([...localParts, ...centralParts, end.bytes], { type: "application/zip" });
+}
+
+async function shareTransferZip() {
+  if (!transferSession?.files?.length) return;
+  const files = transferSession.files.map((item) => item.file);
+  setTransferProgress(0, files.length, `ZIP 준비 중 · 0/${files.length}`);
+  try {
+    const blob = await makeZip(files);
+    const zipName = `${transferSession.issueIdentifier}_${safeCutName(campaignName())}_${files.length}장.zip`;
+    const zipFile = new File([blob], zipName, { type: "application/zip" });
+    const data = { files: [zipFile], title: zipName };
+    if (navigator.share && (!navigator.canShare || navigator.canShare(data))) await navigator.share(data);
+    else downloadFiles([zipFile]);
+    setTransferProgress(files.length, files.length, `ZIP 준비 완료 · ${files.length}장`);
+    el("multica-transfer-summary").textContent = `${zipName}\n공유 또는 저장을 마쳤어요.`;
+  } catch (error) {
+    if (error?.name !== "AbortError") showTransferFailure(error);
+  }
+}
+
+async function copyTransferComment() {
+  if (!transferSession) return;
+  const content = transferSession.comment || buildTransferComment(transferSession);
+  try {
+    await navigator.clipboard.writeText(content);
+    el("multica-transfer-summary").textContent = "댓글 본문을 복사했어요. 멀티카 이슈 댓글에 붙여 넣어 주세요.";
+  } catch (_) {
+    const area = document.createElement("textarea");
+    area.value = content;
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+    el("multica-transfer-summary").textContent = "댓글 본문을 복사했어요.";
+  }
+}
+
 CAMPAIGNS.forEach((campaign) => {
   const option = document.createElement("option");
   option.value = campaign.id;
@@ -719,10 +1121,41 @@ el("preview-save-button").addEventListener("click", () => {
 });
 el("export-close-button").addEventListener("click", closeExportSheet);
 el("export-backdrop").addEventListener("click", closeExportSheet);
+el("multica-send-top").addEventListener("click", startMulticaTransfer);
+el("multica-send-bottom").addEventListener("click", startMulticaTransfer);
+document.querySelectorAll(".multica-settings-button").forEach((button) => button.addEventListener("click", () => openMulticaSettings()));
+el("multica-settings-close").addEventListener("click", closeMulticaSettings);
+el("multica-settings-backdrop").addEventListener("click", closeMulticaSettings);
+el("multica-settings-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    persistSettingsForm();
+    closeMulticaSettings();
+  } catch (error) {
+    el("multica-settings-message").textContent = maskSecrets(error);
+  }
+});
+el("multica-test").addEventListener("click", testMulticaConnection);
+el("multica-token-clear").addEventListener("click", () => {
+  multicaSettings.token = "";
+  saveMulticaSettings();
+  el("multica-token").value = "";
+  el("multica-token").placeholder = "mul_…";
+  el("multica-token-saved").textContent = "저장된 토큰 없음";
+  el("multica-settings-message").textContent = "저장된 토큰을 지웠어요.";
+});
+el("multica-transfer-close").addEventListener("click", closeTransferModal);
+el("multica-transfer-backdrop").addEventListener("click", closeTransferModal);
+el("multica-cancel").addEventListener("click", () => transferAbortController?.abort());
+el("multica-retry").addEventListener("click", () => transferSession?.issue && runTransfer(transferSession));
+el("multica-zip-share").addEventListener("click", shareTransferZip);
+el("multica-copy-comment").addEventListener("click", copyTransferComment);
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!el("preview-modal").classList.contains("hidden")) closePreview();
   if (!el("export-sheet").classList.contains("hidden")) closeExportSheet();
+  if (!el("multica-settings-modal").classList.contains("hidden")) closeMulticaSettings();
+  if (!el("multica-transfer-modal").classList.contains("hidden")) closeTransferModal();
 });
 
 cutInput.value = state.sourceText;

@@ -44,6 +44,11 @@
           </div>
           <span id="setup-progress" class="pill"></span>
         </div>
+        <div class="multica-actions multica-actions-top">
+          <button id="multica-send-top" class="multica-send-button" type="button" disabled>사진을 먼저 올려 주세요</button>
+          <button class="multica-settings-button" type="button">⚙ 멀티카 설정</button>
+          <p id="multica-last-sent" class="multica-last-sent hidden"></p>
+        </div>
         <section id="requirements-banner" class="requirements-banner" aria-label="업체 필수 요약">
           <button id="requirements-toggle" type="button" aria-expanded="true">
             <span>업체 필수 요약</span>
@@ -58,12 +63,16 @@
         </div>
         <p id="export-message" class="message export-message" aria-live="polite"></p>
         <div id="setup-cut-list" class="setup-cut-list"></div>
+        <div class="multica-actions multica-actions-bottom">
+          <button id="multica-send-bottom" class="multica-send-button" type="button" disabled>사진을 먼저 올려 주세요</button>
+          <button class="multica-settings-button" type="button">⚙ 멀티카 설정</button>
+        </div>
         <div class="setup-actions">
           <button id="start-button" class="primary-button" type="button">안 찍은 첫 칸부터 올리기</button>
         </div>
       </section>
 
-      <footer class="privacy-note">사진은 이 휴대폰 안에서만 처리되고 서버로 전송되지 않아요.</footer>
+      <footer class="privacy-note">사진은 ‘멀티카로 전송’을 누르기 전까지 이 휴대폰 안에서만 처리돼요.</footer>
     </main>
 
     <section id="preview-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
@@ -94,6 +103,56 @@
         </div>
         <p class="export-sheet-help">아래 묶음을 하나씩 눌러 아이폰 공유창에서 ‘이미지 저장’을 선택해 주세요.</p>
         <div id="export-batch-list" class="export-batch-list"></div>
+      </div>
+    </section>
+
+    <section id="multica-settings-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="multica-settings-title">
+      <button id="multica-settings-backdrop" class="modal-backdrop" type="button" aria-label="멀티카 설정 닫기"></button>
+      <form id="multica-settings-form" class="preview-card settings-card">
+        <div class="preview-header">
+          <div><p class="eyebrow">한 번만 설정</p><h2 id="multica-settings-title">멀티카 설정</h2></div>
+          <button id="multica-settings-close" class="modal-close-button" type="button" aria-label="멀티카 설정 닫기">×</button>
+        </div>
+        <label class="settings-label" for="multica-token">멀티카 API 토큰</label>
+        <input id="multica-token" class="settings-input" type="password" autocomplete="off" placeholder="mul_…" />
+        <div class="token-row"><span id="multica-token-saved">저장된 토큰 없음</span><button id="multica-token-clear" type="button">지우기</button></div>
+        <label class="settings-label" for="multica-workspace">워크스페이스 slug</label>
+        <input id="multica-workspace" class="settings-input" type="text" value="affiliate-blog" autocapitalize="none" />
+        <label class="settings-label" for="multica-proxy">프록시 주소 (선택)</label>
+        <input id="multica-proxy" class="settings-input" type="url" placeholder="https://xxx.workers.dev" autocapitalize="none" />
+        <div id="multica-manual-issue-wrap" class="hidden">
+          <label class="settings-label" for="multica-manual-issue">이 캠페인의 이슈 ID</label>
+          <input id="multica-manual-issue" class="settings-input" type="text" placeholder="BLOG-1234" autocapitalize="characters" />
+        </div>
+        <div class="settings-actions">
+          <button id="multica-test" class="secondary-button" type="button">연결 테스트</button>
+          <button class="primary-button" type="submit">설정 저장</button>
+        </div>
+        <p id="multica-settings-message" class="message" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="multica-transfer-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="multica-transfer-title">
+      <button id="multica-transfer-backdrop" class="modal-backdrop" type="button" aria-label="전송 창 닫기"></button>
+      <div class="preview-card transfer-card">
+        <div class="preview-header">
+          <div><p class="eyebrow">컷가이드 마무리</p><h2 id="multica-transfer-title">멀티카로 전송</h2></div>
+          <button id="multica-transfer-close" class="modal-close-button" type="button" aria-label="전송 창 닫기">×</button>
+        </div>
+        <p id="multica-transfer-summary" class="transfer-summary"></p>
+        <div id="multica-progress-wrap" class="hidden">
+          <div class="transfer-progress-track"><span id="multica-progress-bar"></span></div>
+          <p id="multica-progress-text" class="transfer-progress-text"></p>
+          <button id="multica-cancel" class="secondary-button" type="button">취소</button>
+        </div>
+        <details id="multica-error-details" class="error-details hidden"><summary>자세히</summary><pre id="multica-error-text"></pre></details>
+        <div id="multica-fallback" class="fallback-box hidden">
+          <p><strong>이 휴대폰 브라우저에서는 멀티카로 직접 보내는 게 막혀 있어요.</strong> ZIP을 공유해서 보내면 피클이 바로 올려 줄게요.</p>
+          <p>프록시 주소를 넣으면 버튼 한 번으로 바로 전송돼요(설정 ⚙).</p>
+          <button id="multica-zip-share" class="multica-send-button" type="button">ZIP으로 묶어 공유</button>
+          <button id="multica-copy-comment" class="secondary-button" type="button">댓글 본문 복사</button>
+        </div>
+        <button id="multica-retry" class="primary-button hidden" type="button">실패한 파일 다시 시도</button>
       </div>
     </section>
 
