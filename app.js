@@ -80,7 +80,7 @@ const CAMPAIGNS = [
   },
   {
     id: "ofmom-slim-inner-beauty",
-    name: "오브맘 슬림&이너뷰티 · 10컷",
+    name: "오브맘 슬림&이너뷰티 · 11컷",
     requirements: `사진 5장 이상 필수: 제품 단독컷 / 섭취컷(손, 일상) / 패키지·내용물 디테일컷
 권장: 영상 또는 GIF 1개
 필수 문구: 본 포스팅은 제품을 제공받아 솔직하게 작성되었습니다.
@@ -98,11 +98,12 @@ const CAMPAIGNS = [
 | 7 | 손에 캡슐 2개 | 필수 섭취컷 · 식탁 일상 |
 | 8 | 톡톡 스틱 먹기 직전 | 필수 섭취컷 · 얼굴 X |
 | 9 | 가방에 넣은 모습 | 권장 · 휴대성 |
-| 10 | 영상: 톡톡 튀는 가루 | 권장 · 5초 |`,
+| 10 | 영상: 톡톡 튀는 가루 | 권장 · 3~6초 · GIF 1 |
+| 11 | 영상: 알약판에서 캡슐 꺼내기 | 권장 · 3~6초 · GIF 2 · 손만 |`,
   },
   {
     id: "arpe-patch-a",
-    name: "아르페 패치 글A · 7컷",
+    name: "아르페 패치 글A · 9컷",
     requirements: `사진 필수: 제품 단독컷 2장 + 사용컷 3장 이상
 필수 문구: 올리브영 온라인몰에서 '아르페'를 검색하면 구매할 수 있다는 내용
 공정위 문구: 본 콘텐츠는 아르페 제품을 체험하고 솔직하게 작성한 후기입니다.
@@ -117,11 +118,13 @@ const CAMPAIGNS = [
 | 4 | 붙이기 전 트러블 부위 | 필수 사용컷 · 부위만 |
 | 5 | 붙인 모습 | 필수 사용컷 · 4번과 같은 각도 |
 | 6 | 아침에 떼어낸 패치 | 필수 사용컷 · 팁 쪽 |
-| 7 | 다음 날 아침 같은 부위 | 4번과 같은 각도·빛 |`,
+| 7 | 다음 날 아침 같은 부위 | 4번과 같은 각도·빛 |
+| 8 | 영상: 시트에서 패치 떼어 붙이기 | 권장 · 3~6초 · GIF 1 · 손+부위만 |
+| 9 | 영상: 아침에 패치 떼어내기 | 권장 · 3~6초 · GIF 2 · 부위만 |`,
   },
   {
     id: "arpe-patch-b",
-    name: "아르페 패치 글B · 9컷",
+    name: "아르페 패치 글B · 11컷",
     requirements: `사진 필수: 제품 단독컷 2장 + 사용컷 3장 이상
 필수 문구: 올리브영 온라인몰에서 '아르페'를 검색하면 구매할 수 있다는 내용
 공정위 문구: 본 콘텐츠는 아르페 제품을 체험하고 솔직하게 작성한 후기입니다.
@@ -138,11 +141,13 @@ const CAMPAIGNS = [
 | 6 | 아침에 떼어낸 패치 | 필수 사용컷 |
 | 7 | 다음 날 아침 같은 부위 | 4번과 같은 각도·빛 |
 | 8 | 가방에 파우치 넣은 모습 | 권장 |
-| 9 | 밖에서 파우치 꺼내 쓰기 | 선택 |`,
+| 9 | 밖에서 파우치 꺼내 쓰기 | 선택 |
+| 10 | 영상: 파우치 열어 패치 꺼내기 | 권장 · 3~6초 · GIF 1 · 손만 |
+| 11 | 영상: 붙인 패치 손끝으로 눌러 보기 | 권장 · 3~6초 · GIF 2 · 부위만 |`,
   },
   {
     id: "marienb-ntz20",
-    name: "마리앤비 NTZ20 · 13컷",
+    name: "마리앤비 NTZ20 · 15컷",
     requirements: `최소 10~14일 사용 후 작성
 사진 8장 이상 권장 (직접 촬영) · 본문 1,500자 이상 권장
 제목: 나이아신아마이드 세럼 또는 나이아신아마이드 20% + 마리앤비 NTZ20
@@ -164,7 +169,9 @@ const CAMPAIGNS = [
 | 10 | 바르는 장면 | 손+볼만 |
 | 11 | 선크림·메이크업 위 | 밀림 있으면 그것도 |
 | 12 | 화장대에 둔 모습 | 생활감 |
-| 13 | 2주 뒤 줄어든 양 | 14일차 · 처음과 같은 자리 |`,
+| 13 | 2주 뒤 줄어든 양 | 14일차 · 처음과 같은 자리 |
+| 14 | 영상: 스포이트로 손등에 떨어뜨리기 | 권장 · 1일차 · 3~6초 · GIF 1 |
+| 15 | 영상: 손등에 펴 바르기 | 권장 · 1일차 · 3~6초 · GIF 2 |`,
   },
   {
     id: "garden-of-life-women-probiotic",
@@ -258,7 +265,13 @@ function loadState(campaignId) {
   const campaign = CAMPAIGNS.find((item) => item.id === campaignId) || CAMPAIGNS[0];
   if (campaignId !== LEGACY_CAMPAIGN_ID) {
     const saved = loadCampaignStates()[campaignId];
-    return saved?.cuts?.length ? normalizeState(saved) : createPresetState(campaign);
+    if (!saved?.cuts?.length) return createPresetState(campaign);
+    // 프리셋에 나중에 더한 컷(예: GIF용 영상 컷, BLOG-1383)은 이미 시작한 진행에도 붙인다.
+    const state = normalizeState(saved);
+    const have = new Set(state.cuts.map((cut) => cut.id));
+    createPresetState(campaign).cuts.filter((cut) => !have.has(cut.id))
+      .forEach((cut) => state.cuts.push({ selectedReference: 0, ...cut }));
+    return state;
   }
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
