@@ -1,5 +1,7 @@
 # 멀티카 전송 프록시 붙이기
 
+> 2026-11-26: 케이 계정에 `https://multica-proxy.kay-boram.workers.dev` 로 배포 완료. 앱 기본값이라 프록시 주소 칸은 비워 둔다. 코드 바꿀 때는 이 파일의 코드로 `npx wrangler deploy` (이름 `multica-proxy`).
+
 컷가이드 카메라는 `https://kayboram.github.io`에서 열리지만 멀티카 API는 현재 `https://multica.ai`만 브라우저 호출을 허용합니다. 2026-11-20 실측에서 `https://kayboram.github.io` 오리진의 사전 요청은 HTTP 200이었지만 `Access-Control-Allow-Origin`이 없었고, 같은 요청을 `https://multica.ai`에서 보내면 해당 헤더와 인증·콘텐츠 헤더 허용값이 돌아왔습니다. 그래서 아이폰 브라우저에서 버튼 한 번으로 직접 보내려면 아래의 본인 전용 프록시가 필요합니다. 프록시가 없어도 앱의 ZIP 공유와 댓글 복사는 작동합니다.
 
 ## Cloudflare Worker 코드

@@ -5,7 +5,8 @@ const DB_NAME = "cut-guide-camera";
 const DB_STORE = "reference-images";
 const LEGACY_CAMPAIGN_ID = "legacy-allsenne";
 const MULTICA_SETTINGS_KEY = "cgc-multica-settings-v1";
-const MULTICA_API_BASE = "https://api.multica.ai";
+// Browsers on kayboram.github.io cannot call api.multica.ai directly (CORS), so the default goes through the Cloudflare Worker in docs/multica-proxy.md.
+const MULTICA_API_BASE = "https://multica-proxy.kay-boram.workers.dev";
 const MULTICA_ISSUES = {
   "garden-of-life-women-probiotic": "BLOG-1053",
   "hidehere-hospital": "BLOG-1240",
@@ -852,7 +853,7 @@ async function testMulticaConnection() {
     el("multica-settings-message").textContent = `연결됨(${name})`;
   } catch (error) {
     if (error?.status === 401) el("multica-settings-message").textContent = "토큰이 만료됐거나 틀렸어요.";
-    else if (error instanceof TypeError) el("multica-settings-message").textContent = "이 브라우저에서는 멀티카로 직접 연결이 막혀 있어요(프록시 주소를 넣어 주세요).";
+    else if (error instanceof TypeError) el("multica-settings-message").textContent = "프록시 연결에 실패했어요. 프록시 주소 칸을 비우고 다시 저장해 주세요.";
     else el("multica-settings-message").textContent = maskSecrets(error);
   }
 }

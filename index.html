@@ -118,8 +118,8 @@
         <div class="token-row"><span id="multica-token-saved">저장된 토큰 없음</span><button id="multica-token-clear" type="button">지우기</button></div>
         <label class="settings-label" for="multica-workspace">워크스페이스 slug</label>
         <input id="multica-workspace" class="settings-input" type="text" value="affiliate-blog" autocapitalize="none" />
-        <label class="settings-label" for="multica-proxy">프록시 주소 (선택)</label>
-        <input id="multica-proxy" class="settings-input" type="url" placeholder="https://xxx.workers.dev" autocapitalize="none" />
+        <label class="settings-label" for="multica-proxy">프록시 주소 (비워 두세요)</label>
+        <input id="multica-proxy" class="settings-input" type="url" placeholder="비워 두면 기본 프록시 사용" autocapitalize="none" />
         <div id="multica-manual-issue-wrap" class="hidden">
           <label class="settings-label" for="multica-manual-issue">이 캠페인의 이슈 ID</label>
           <input id="multica-manual-issue" class="settings-input" type="text" placeholder="BLOG-1234" autocapitalize="characters" />
@@ -148,7 +148,7 @@
         <details id="multica-error-details" class="error-details hidden"><summary>자세히</summary><pre id="multica-error-text"></pre></details>
         <div id="multica-fallback" class="fallback-box hidden">
           <p><strong>이 휴대폰 브라우저에서는 멀티카로 직접 보내는 게 막혀 있어요.</strong> ZIP을 공유해서 보내면 피클이 바로 올려 줄게요.</p>
-          <p>프록시 주소를 넣으면 버튼 한 번으로 바로 전송돼요(설정 ⚙).</p>
+          <p>토큰을 다시 저장하고 연결 테스트를 눌러 보세요(설정 ⚙).</p>
           <button id="multica-zip-share" class="multica-send-button" type="button">ZIP으로 묶어 공유</button>
           <button id="multica-copy-comment" class="secondary-button" type="button">댓글 본문 복사</button>
         </div>
